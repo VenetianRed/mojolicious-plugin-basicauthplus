@@ -130,13 +130,27 @@ sub _check_ldap {
         timeout => $params->{timeout} // 120,
         version => $params->{version} // 3,
     );
-    unless ($ldap) {
+    
+    unless($ldap) {
         $c->app->log->warn("Connection to $params->{host} failed: $@")
             if $logging;
         return 0;
     }
+    
+	my $socket_type = ref $ldap->{net_ldap_socket} ;
+    if( $logging ) {
+    	my $new_ldap_result_type = ref $ldap ;
+    	my $socket_type = ref $ldap->{net_ldap_socket} ;
+    	my $text = "Made connection to $params->{host}, " .
+    		"Net::LDAP->new() returned an object of type $new_ldap_result_type "  .
+    		"containing a socket of type $socket_type." ;
+    	$c->app->log->info( $text ) ;
+    }
 
-    unless (defined($params->{start_tls}) && $params->{start_tls} == 0) {
+    unless (
+    	($socket_type eq 'IO::Socket::SSL') || # SSL connection already established
+    	(defined($params->{start_tls}) && $params->{start_tls} == 0) # user doesn't want TLS
+    ) {
         my $dse = $ldap->root_dse();
         my $has_tls = $dse->supported_extension('1.3.6.1.4.1.1466.20037');
         if ($has_tls) {
@@ -144,7 +158,7 @@ sub _check_ldap {
                 verify  => $params->{tls_verify} // 'optional',
                 cafile  => $params->{cafile} // '',
             );
-            if ($mesg->code) {
+            if ($mesg->is_error) {
             	my $text = "start_tls() failed for $params->{host}. " .
             		"[$mesg->code] $mesg->error_name: $mesg->error_text" ;
                 $c->app->log->warn( $text ) if $logging;
