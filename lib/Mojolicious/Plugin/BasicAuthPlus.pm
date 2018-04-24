@@ -6,7 +6,7 @@ use Authen::Simple::Password;
 use Authen::Simple::Passwd;
 use Net::LDAP;
 
-our $VERSION = '0.11.1';
+our $VERSION = '0.11.0';
 
 sub register {
     my ($plugin, $app) = @_;
@@ -130,38 +130,42 @@ sub _check_ldap {
         timeout => $params->{timeout} // 120,
         version => $params->{version} // 3,
     );
-    unless ($ldap) {
+    
+    unless($ldap) {
         $c->app->log->warn("Connection to $params->{host} failed: $@")
             if $logging;
         return 0;
     }
+    
+	my $socket_type = ref $ldap->{net_ldap_socket} ;
+    if( $logging ) {
+    	my $new_ldap_result_type = ref $ldap ;
+    	my $socket_type = ref $ldap->{net_ldap_socket} ;
+    	my $text = "Made connection to $params->{host}, " .
+    		"Net::LDAP->new() returned an object of type $new_ldap_result_type "  .
+    		"containing a socket of type $socket_type." ;
+    	$c->app->log->info( $text ) ;
+    }
 
-    my $socket_type = ref $ldap->{net_ldap_socket};
-    $c->app->log->warn("LDAP socket type: $socket_type") if $logging;
-
-    unless (($socket_type eq 'IO::Socket::SSL')
-        || (defined($params->{start_tls}) && $params->{start_tls} == 0))
-    {
-        my $dse     = $ldap->root_dse();
+    unless (
+    	($socket_type eq 'IO::Socket::SSL') || # SSL connection already established
+    	(defined($params->{start_tls}) && $params->{start_tls} == 0) # user doesn't want TLS
+    ) {
+        my $dse = $ldap->root_dse();
         my $has_tls = $dse->supported_extension('1.3.6.1.4.1.1466.20037');
-
         if ($has_tls) {
             my $mesg = $ldap->start_tls(
-                verify => $params->{tls_verify} // 'optional',
-                cafile => $params->{cafile}     // '',
+                verify  => $params->{tls_verify} // 'optional',
+                cafile  => $params->{cafile} // '',
             );
-            if ($mesg->code) {
-                my $text = "start_tls() failed for $params->{host}. "
-                    . "[$mesg->code] $mesg->error_name: $mesg->error_text";
-                $c->app->log->warn($text) if $logging;
+            if ($mesg->is_error) {
+            	my $text = "start_tls() failed for $params->{host}. " .
+            		"[$mesg->code] $mesg->error_name: $mesg->error_text" ;
+                $c->app->log->warn( $text ) if $logging;
                 $ldap->unbind;
                 return 0;
             }
         }
-
-        $socket_type = ref $ldap->{net_ldap_socket};
-        $c->app->log->warn("LDAP socket type after start_tls(): $socket_type")
-            if $logging;
     }
 
     my @credentials
@@ -258,7 +262,7 @@ Mojolicious::Plugin::BasicAuthPlus - Basic HTTP Auth Helper Plus
 
 =head1 VERSION
 
-Version 0.11.1
+Version 0.11.0
 
 =head1 SYNOPSIS
 
@@ -668,15 +672,15 @@ Brad Robertson <blr@cpan.org>
 
 =head1 CONTRIBUTORS
 
+In alphabetical order:
+
 =over 2
 
-Nicolas Georges
+G.Y. Park
 
 Jay Mortensen
 
-Mark Muldoon
-
-G.Y. Park
+Nicolas Georges
 
 =back
 
